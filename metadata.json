@@ -1,0 +1,8 @@
+{
+  "name": "AstroVerse",
+  "description": "A modern, premium astrology application that generates personalized natal chart readings, provides daily horoscopes, compatibility reports, and more.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera"
+  ]
+}

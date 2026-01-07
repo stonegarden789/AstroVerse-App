@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    
+    <!-- SEO & Social Sharing Meta Tags -->
+    <title>AstroVerse | Astrograma Ta Personală, Horoscopul Zilnic & Compatibilități.</title>
+    <meta name="description" content="Decodifică harta ta cosmică. Rapoarte astrologice profesionale, bazate pe date deterministe. Descoperă destinul, karma și calea ta unică." />
+    <meta name="keywords" content="Astrograma personala, horoscop zilnic, compatibilitate zodii, astrograma nastere, destin, karma, astrologie română" />
+    <link rel="canonical" href="https://astroverse.uk" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://astroverse.uk" />
+    <meta property="og:title" content="AstroVerse: Harta Cosmică" />
+    <meta property="og:description" content="Decodifică harta ta cosmică. Rapoarte astrologice profesionale, bazate pe date deterministe. Descoperă destinul, karma și calea ta unică." />
+    <meta property="og:image" content="https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?q=80&w=1200&h=630&fit=crop" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://astroverse.uk" />
+    <meta name="twitter:title" content="AstroVerse: Harta Cosmică" />
+    <meta name="twitter:description" content="Decodifică harta ta cosmică. Rapoarte astrologice profesionale, bazate pe date deterministe. Descoperă destinul, karma și calea ta unică." />
+    <meta name="twitter:image" content="https://images.unsplash.com/photo-1534796636912-3b95b3ab5986?q=80&w=1200&h=630&fit=crop" />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&display=swap" rel="stylesheet">
+    <style>
+      body {
+        font-family: 'Times New Roman', Times, serif;
+        background-color: #000; /* Fallback */
+        background-image: linear-gradient(180deg, #d6a9e6 0%, #a86add 25%, #4b0d91 50%, #1c0f38 75%, #000000 100%);
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+      }
+      .card-base {
+        background-color: rgba(16, 18, 38, 0.7);
+        border: 1px solid rgba(116, 78, 255, 0.2);
+      }
+      .celestial-title {
+        color: #a78bfa; /* A more intense, darker violet (violet-400) */
+      }
+      .button-primary {
+        background-color: #7c3aed; /* A solid violet (violet-600) */
+        color: white;
+        font-weight: bold;
+        padding: 0.75rem 1.5rem;
+        border-radius: 9999px; /* pill shape */
+        transition: all 0.3s ease;
+        border: none;
+        box-shadow: 0 4px 15px rgba(124, 58, 237, 0.4);
+      }
+      .button-primary:hover {
+        transform: translateY(-2px);
+        background-color: #6d28d9; /* Darker violet on hover */
+        box-shadow: 0 6px 20px rgba(124, 58, 237, 0.6);
+      }
+      
+      @keyframes slowZoom {
+        from {
+          transform: scale(1);
+        }
+        to {
+          transform: scale(1.1);
+        }
+      }
+      
+      .animate-slow-zoom {
+        animation: slowZoom 15s ease-in-out infinite alternate;
+      }
+      
+      .fade-to-bottom {
+         mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+        -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+      }
+      .font-garamond {
+        font-family: 'EB Garamond', serif;
+      }
+
+      /* Styles for rendered Markdown content */
+      .markdown-content h2 {
+        font-size: 1.875rem; /* text-3xl */
+        font-weight: 700;
+        color: #a78bfa; /* celestial-title */
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid rgba(116, 78, 255, 0.2);
+      }
+      .markdown-content h3 {
+        font-size: 1.5rem; /* text-2xl */
+        font-weight: 600;
+        color: #c4b5fd; /* violet-300 */
+        margin-top: 1.5rem;
+        margin-bottom: 0.75rem;
+      }
+      .markdown-content h4 {
+        font-size: 1.25rem; /* text-xl */
+        font-weight: 600;
+        color: #ddd6fe; /* violet-200 */
+        margin-top: 1.25rem;
+        margin-bottom: 0.5rem;
+      }
+      .markdown-content p {
+        margin-bottom: 1rem;
+        line-height: 1.75;
+      }
+      .markdown-content ul {
+        list-style-type: disc;
+        margin-left: 1.5rem;
+        margin-bottom: 1rem;
+      }
+      .markdown-content li {
+        margin-bottom: 0.5rem;
+      }
+      .markdown-content hr {
+        border-color: rgba(116, 78, 255, 0.2);
+        margin-top: 2rem;
+        margin-bottom: 2rem;
+      }
+      .markdown-content strong {
+        color: #ddd6fe; /* violet-200 */
+      }
+
+      /* Styles for rendered Markdown in CHAT */
+      .chat-markdown h3 {
+        font-size: 1.125rem; /* text-lg */
+        font-weight: 600;
+        color: #c4b5fd; /* violet-300 */
+        margin-top: 0.75rem;
+        margin-bottom: 0.5rem;
+      }
+      .chat-markdown p {
+        margin-bottom: 0.75rem;
+        line-height: 1.6;
+      }
+      .chat-markdown ul {
+        list-style-type: disc;
+        margin-left: 1.25rem;
+        margin-bottom: 0.75rem;
+      }
+      .chat-markdown li {
+        margin-bottom: 0.25rem;
+      }
+      .chat-markdown strong {
+        color: #ddd6fe; /* violet-200 */
+      }
+      
+      @keyframes rotateRing {
+        from {
+          transform: rotate(0deg);
+        }
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes pulseGlow {
+        0%, 100% {
+          transform: scale(1);
+          opacity: 0.8;
+          text-shadow: 0 0 8px rgba(196, 181, 253, 0.4);
+        }
+        50% {
+          transform: scale(1.05);
+          opacity: 1;
+          text-shadow: 0 0 16px rgba(196, 181, 253, 0.7);
+        }
+      }
+      
+      .animate-rotate-ring {
+        animation: rotateRing 60s linear infinite;
+      }
+      
+      .animate-pulse-glow {
+        animation: pulseGlow 4s ease-in-out infinite;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.28.0",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0",
+    "marked": "https://aistudiocdn.com/marked@^14.0.0",
+    "firebase/": "https://aistudiocdn.com/firebase@^12.6.0/",
+    "vite": "https://aistudiocdn.com/vite@^7.2.6",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1",
+    "firebase-functions": "https://aistudiocdn.com/firebase-functions@^7.0.0",
+    "firebase-admin": "https://aistudiocdn.com/firebase-admin@^13.6.0",
+    "@stripe/stripe-js": "https://aistudiocdn.com/@stripe/stripe-js@^8.5.3",
+    "stripe": "https://aistudiocdn.com/stripe@^20.0.0",
+    "firebase-functions/": "https://aistudiocdn.com/firebase-functions@^7.0.0/"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

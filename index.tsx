@@ -1,0 +1,25 @@
+
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App';
+import { LanguageProvider } from './contexts/LanguageContext';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { TTSProvider } from './contexts/TTSContext';
+
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  throw new Error("Could not find root element to mount to");
+}
+
+const root = ReactDOM.createRoot(rootElement);
+root.render(
+  <React.StrictMode>
+    <LanguageProvider>
+      <TTSProvider>
+        <ErrorBoundary>
+          <App />
+        </ErrorBoundary>
+      </TTSProvider>
+    </LanguageProvider>
+  </React.StrictMode>
+);
