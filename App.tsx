@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { Hero } from './components/Hero';
 import { Dashboard } from './components/Dashboard';
@@ -34,12 +34,14 @@ import { BioRhythms } from './components/BioRhythms';
 import { ChineseZodiac } from './components/ChineseZodiac';
 import { ExtendedProfile } from './components/ExtendedProfile';
 import { AstroStore } from './components/AstroStore';
-import { StripeDebug } from './components/StripeDebug'; // IMPORT NOU
+import { StripeDebug } from './components/StripeDebug';
+import { Toast } from './components/Toast';
 import { useLanguage } from './hooks/useLanguage';
 import type { BirthData, User, Comment, AppView, CognitiveProfile } from './types';
 import { translations } from './constants';
 import { MonetizationManager } from './utils/monetization';
-import { saveUserData, getUserData } from './utils/firebase';
+import { saveUserData, getUserData, consumeUserTokens } from './utils/firebase';
+import { TOKEN_COSTS } from './utils/tokenCosts';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<AppView>('form');
@@ -55,30 +57,25 @@ const App: React.FC = () => {
   const { language, setLanguage, setCurrency } = useLanguage(); 
   const t = translations[language];
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  
-  // Pending data state for the "Save but not logged in" flow
   const [pendingBirthData, setPendingBirthData] = useState<{ data: BirthData, shouldSave: boolean } | null>(null);
-  
-  // Monetization State
   const [isStoreOpen, setIsStoreOpen] = useState(false);
+  
+  // Toast State
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
 
-  // Check for saved user on load
   useEffect(() => {
     const savedUser = localStorage.getItem('astroverse_user');
     if (savedUser) {
       try {
         const parsedUser = JSON.parse(savedUser);
-        // Ensure tokens exist for backward compatibility
-        if (typeof parsedUser.tokens !== 'number') parsedUser.tokens = 5; 
+        if (typeof parsedUser.tokens !== 'number') parsedUser.tokens = 50; 
         setUser(parsedUser);
         
-        // Try to fetch fresher data from "Cloud" (Simulation) if user is there
         if(parsedUser.email) {
             getUserData(parsedUser.email).then(remoteData => {
                 if(remoteData) {
                     const merged = { ...parsedUser, ...remoteData };
                     setUser(merged);
-                    // Also set birth data if present
                     if(merged.isPrimarySet && merged.birthDate) {
                         setBirthData({
                             date: merged.birthDate,
@@ -89,7 +86,6 @@ const App: React.FC = () => {
                 }
             });
         }
-
       } catch (e) {
         console.error("Failed to parse saved user");
         localStorage.removeItem('astroverse_user');
@@ -97,7 +93,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Auto-populate form/session data if user has saved data
   useEffect(() => {
       if (user && user.isPrimarySet && user.birthDate && user.birthTime && user.birthLocation) {
           setBirthData({
@@ -108,7 +103,6 @@ const App: React.FC = () => {
       }
   }, [user]);
 
-  // Persist User changes
   useEffect(() => {
       if (user) {
           localStorage.setItem('astroverse_user', JSON.stringify(user));
@@ -145,7 +139,6 @@ const App: React.FC = () => {
     }
 
     setBirthData(data);
-    
     setTimeout(() => {
         setCurrentView('dashboard');
         setIsLoading(false); 
@@ -168,7 +161,7 @@ const App: React.FC = () => {
   
   const handleAuthSuccess = async (authenticatedUser: User, source?: 'SIGN_IN' | 'VERIFIED') => {
       if (typeof authenticatedUser.tokens !== 'number') {
-          authenticatedUser.tokens = 5; 
+          authenticatedUser.tokens = 50; 
           authenticatedUser.subscriptionTier = 'Free';
       }
 
@@ -218,20 +211,40 @@ const App: React.FC = () => {
     }
   };
 
-  // --- MONETIZATION HANDLERS ---
+  // --- CORE MONETIZATION LOGIC (UPDATED) ---
 
-  const handleConsumeTokens = (amount: number, featureName: string): boolean => {
-      if (!user) return false;
-      const result = MonetizationManager.checkAndLogConsumption(user.email, user.tokens, featureName);
-      
-      if (result.success) {
-          const newUser = { ...user, tokens: user.tokens - amount };
-          setUser(newUser);
-          saveUserData(user.email, { tokens: newUser.tokens }); 
-          return true;
-      } else {
+  const handleConsumeTokens = (cost: number, featureName: string): boolean => {
+      if (!user) {
+          setIsAuthModalOpen(true);
           return false;
       }
+
+      // Optimistic Update handled by the service component, but here we trigger the process
+      // IMPORTANT: This logic is now async in reality, but for UI components expecting synchronous result
+      // we do a quick check locally then fire the async request.
+      
+      if (user.tokens < cost) {
+          setToast({ message: `Insufficient Funds! You need ${cost} tokens.`, type: 'error' });
+          setIsStoreOpen(true);
+          return false;
+      }
+
+      // Fire and forget (in this synchronous wrapper), but UI updates via state
+      consumeUserTokens(user.email, cost, featureName).then(() => {
+          const newUser = { ...user, tokens: user.tokens - cost };
+          setUser(newUser);
+          setToast({ message: `Spent ${cost} Tokens on ${featureName}`, type: 'success' });
+      }).catch(err => {
+          if (err.message === 'INSUFFICIENT_FUNDS') {
+              setToast({ message: `Transaction Failed: Insufficient Funds`, type: 'error' });
+              setIsStoreOpen(true);
+          } else {
+              setToast({ message: `Transaction Error`, type: 'error' });
+          }
+          // Revert optimistic update if we did one (not done here yet to be safe)
+      });
+
+      return true; // Return true to allow immediate UI transition, error handled async
   };
 
   const handlePurchaseTokens = (packId: 'SMALL' | 'MEDIUM' | 'LARGE') => {
@@ -240,7 +253,7 @@ const App: React.FC = () => {
       const newUser = { ...user, tokens: user.tokens + result.tokensAdded };
       setUser(newUser);
       saveUserData(user.email, { tokens: newUser.tokens }); 
-      alert(`Successfully purchased ${result.tokensAdded} Tokens!`);
+      setToast({ message: `Successfully purchased ${result.tokensAdded} Tokens!`, type: 'success' });
       setIsStoreOpen(false);
   };
 
@@ -257,7 +270,7 @@ const App: React.FC = () => {
           tokens: newUser.tokens,
           subscriptionTier: newUser.subscriptionTier
       });
-      alert(`Welcome to ${tierId}! ${result.tokensAdded} Tokens added.`);
+      setToast({ message: `Welcome to ${tierId}! ${result.tokensAdded} Tokens added.`, type: 'success' });
       setIsStoreOpen(false);
   }
 
@@ -283,7 +296,7 @@ const App: React.FC = () => {
                     <AIFuture 
                         birthData={birthData!} 
                         user={user}
-                        onConsumeTokens={handleConsumeTokens}
+                        onConsumeTokens={(amt, feat) => handleConsumeTokens(TOKEN_COSTS.AI_FUTURE_FORECAST, 'AI Future')}
                         onOpenStore={() => setIsStoreOpen(true)}
                     />
                 </FeaturePage>
@@ -450,7 +463,10 @@ const App: React.FC = () => {
           {renderDashboardContent()}
         </main>
         <footer className="text-center py-6 mt-10">
-          <p className="text-xs text-gray-500">© 2025 AstroVerse. {t.footer.rights}</p>
+          <p className="text-xs text-gray-500">
+            © 2025 AstroVerse. {t.footer.rights}
+            <span className="opacity-50 ml-2">v1.2 (Real-Time Tokens)</span>
+          </p>
         </footer>
       </div>
     );
@@ -472,6 +488,7 @@ const App: React.FC = () => {
         {renderContent()}
       </div>
        {currentView !== 'form' && <AdBanner />}
+       
        {isAuthModalOpen && (
         <AuthModal 
             onClose={() => {
@@ -481,6 +498,7 @@ const App: React.FC = () => {
             onAuthSuccess={handleAuthSuccess}
         />
        )}
+       
        {isStoreOpen && (
            <AstroStore 
                 onClose={() => setIsStoreOpen(false)}
@@ -489,7 +507,15 @@ const App: React.FC = () => {
                 currentBalance={user ? user.tokens : 0}
            />
        )}
-       {/* Widget de Debug Stripe - Vizibil peste toate paginile */}
+       
+       {toast && (
+           <Toast 
+                message={toast.message} 
+                type={toast.type} 
+                onClose={() => setToast(null)} 
+           />
+       )}
+       
        <StripeDebug />
     </div>
   );

@@ -1,3 +1,4 @@
+
 import { onCall, HttpsError, onRequest } from "firebase-functions/v2/https";
 import * as admin from "firebase-admin";
 import Stripe from "stripe";
@@ -7,19 +8,75 @@ if (!admin.apps.length) {
   admin.initializeApp();
 }
 
-// Initialize Stripe securely
-// Falls back to a placeholder to prevent crash on deploy if var is missing, but will error at runtime.
 const STRIPE_SECRET = process.env.STRIPE_SECRET_KEY || 'sk_test_PLACEHOLDER_KEY';
 const stripe = new Stripe(STRIPE_SECRET, {
   apiVersion: '2023-10-16',
 });
 
+// --- CONSUME TOKENS (ATOMIC TRANSACTION) ---
+interface ConsumeRequest {
+    amount: number;
+    featureName: string;
+}
+
+export const consumeTokens = onCall(async (request) => {
+    // 1. Security: Check Auth
+    if (!request.auth) {
+        throw new HttpsError('unauthenticated', 'User must be logged in.');
+    }
+
+    const { amount, featureName } = request.data as ConsumeRequest;
+    const userId = request.auth.uid;
+    const userRef = admin.firestore().collection('users').doc(userId);
+
+    // 2. Atomic Transaction
+    try {
+        await admin.firestore().runTransaction(async (transaction) => {
+            const userDoc = await transaction.get(userRef);
+
+            if (!userDoc.exists) {
+                throw new HttpsError('not-found', 'User profile not found.');
+            }
+
+            const currentBalance = userDoc.data()?.tokens || 0;
+
+            // 3. Validate Balance
+            if (currentBalance < amount) {
+                // Return specific error code for frontend to trigger Store UI
+                throw new HttpsError('failed-precondition', 'INSUFFICIENT_FUNDS');
+            }
+
+            // 4. Deduct Tokens & Log History
+            const newBalance = currentBalance - amount;
+            
+            transaction.update(userRef, { tokens: newBalance });
+
+            // Create usage history entry
+            const historyRef = userRef.collection('usage_history').doc();
+            transaction.set(historyRef, {
+                action: featureName,
+                cost: amount,
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                balanceAfter: newBalance
+            });
+        });
+
+        return { success: true, message: 'Transaction successful' };
+
+    } catch (error: any) {
+        console.error("Token Transaction Failed:", error);
+        // Re-throw known errors (like insufficient funds)
+        if (error.code === 'failed-precondition') {
+            throw error;
+        }
+        throw new HttpsError('internal', 'Transaction failed due to server error.');
+    }
+});
+
 /**
- * 1. Create Stripe Checkout Session (Callable from Frontend)
- * Creates a payment session for either a Token Pack (One-time) or Subscription.
+ * 1. Create Stripe Checkout Session
  */
 export const createStripeCheckoutSession = onCall(async (request) => {
-  // Authentication Check
   if (!request.auth) {
     throw new HttpsError('unauthenticated', 'User must be logged in to purchase.');
   }
@@ -33,14 +90,10 @@ export const createStripeCheckoutSession = onCall(async (request) => {
   }
 
   try {
-    // Determine return URL dynamically based on the request origin
-    // This allows it to work on localhost:5173 AND astroverse.uk without code changes
     const origin = request.rawRequest.headers.origin || 'https://astroverse.uk';
+    // All purchases are now one-time payments in Pay-As-You-Go model
+    const mode = 'payment';
 
-    // Determine mode: 'payment' for tokens, 'subscription' for tiers
-    const mode = type === 'SUBSCRIPTION' ? 'subscription' : 'payment';
-
-    // Create session parameters
     const sessionParams: Stripe.Checkout.SessionCreateParams = {
       payment_method_types: ['card'],
       line_items: [
@@ -50,30 +103,26 @@ export const createStripeCheckoutSession = onCall(async (request) => {
             product_data: {
               name: productName,
               metadata: {
-                productId: productId, // e.g., 'SMALL', 'PRIME'
+                productId: productId,
               }
             },
-            unit_amount: Math.round(price * 100), // Stripe expects cents
-            recurring: mode === 'subscription' ? { interval: 'month' } : undefined,
+            unit_amount: Math.round(price * 100),
           },
           quantity: 1,
         },
       ],
       mode: mode,
-      // Redirect URLs
       success_url: `${origin}/dashboard?payment_success=true`,
       cancel_url: `${origin}/dashboard?payment_cancelled=true`,
       customer_email: userEmail,
-      // Metadata is crucial for the Webhook to know who to credit
       metadata: {
         userId: userId,
         productId: productId,
-        type: type // 'TOKEN' or 'SUBSCRIPTION'
+        type: type
       },
     };
 
     const session = await stripe.checkout.sessions.create(sessionParams);
-
     return { sessionId: session.id };
 
   } catch (error: any) {
@@ -83,9 +132,7 @@ export const createStripeCheckoutSession = onCall(async (request) => {
 });
 
 /**
- * 2. Stripe Webhook (HTTP Trigger)
- * Securely listens for 'checkout.session.completed' events from Stripe servers
- * and updates the user's balance in Firestore.
+ * 2. Stripe Webhook
  */
 export const stripeWebhook = onRequest(async (req, res) => {
   const signature = req.headers['stripe-signature'];
@@ -95,26 +142,20 @@ export const stripeWebhook = onRequest(async (req, res) => {
 
   try {
     if (!signature || !endpointSecret) {
-        console.error("Missing signature or webhook secret");
         res.status(400).send('Webhook Error: Missing signature or config');
         return;
     }
-    
-    // Verify the event came from Stripe using the raw body
     event = stripe.webhooks.constructEvent(req.rawBody, signature, endpointSecret);
   } catch (err: any) {
-    console.error(`⚠️  Webhook signature verification failed.`, err.message);
     res.status(400).send(`Webhook Error: ${err.message}`);
     return;
   }
 
-  // Handle the event
   if (event.type === 'checkout.session.completed') {
     const session = event.data.object as Stripe.Checkout.Session;
-    
     const userId = session.metadata?.userId;
     const productId = session.metadata?.productId;
-    const type = session.metadata?.type;
+    // const type = session.metadata?.type; // No longer needed as we only have TOKENS
 
     if (userId && productId) {
         try {
@@ -123,40 +164,31 @@ export const stripeWebhook = onRequest(async (req, res) => {
             await admin.firestore().runTransaction(async (transaction) => {
                 const userDoc = await transaction.get(userRef);
                 
-                // If user doesn't exist in DB yet (rare), create basic record
                 if (!userDoc.exists) {
-                    transaction.set(userRef, { email: session.customer_email, tokens: 5, subscriptionTier: 'Free' });
+                    transaction.set(userRef, { email: session.customer_email, tokens: 50 });
                 }
 
-                const currentTokens = userDoc.exists ? (userDoc.data()?.tokens || 0) : 5;
+                const currentTokens = userDoc.exists ? (userDoc.data()?.tokens || 0) : 50;
 
-                if (type === 'TOKEN') {
-                    // Add Tokens based on package ID
-                    let tokensToAdd = 0;
-                    if (productId === 'SMALL') tokensToAdd = 10;
-                    if (productId === 'MEDIUM') tokensToAdd = 30;
-                    if (productId === 'LARGE') tokensToAdd = 50;
+                // --- CREDIT UPDATE LOGIC (Pay-As-You-Go) ---
+                let tokensToAdd = 0;
+                
+                // Matches utils/monetization.ts
+                if (productId === 'SMALL') tokensToAdd = 10000;
+                if (productId === 'MEDIUM') tokensToAdd = 22000; // 10% Bonus
+                if (productId === 'LARGE') tokensToAdd = 50000;  // 25% Bonus
 
-                    transaction.update(userRef, { tokens: currentTokens + tokensToAdd });
-                    console.log(`Added ${tokensToAdd} tokens to user ${userId}`);
-                } 
-                else if (type === 'SUBSCRIPTION') {
-                    // Update Subscription Tier
-                    let tierName = 'Free';
-                    let tokensToAdd = 0;
-                    
-                    if (productId === 'EXPLORER') { tierName = 'Explorer'; tokensToAdd = 5; }
-                    if (productId === 'INSIGHT') { tierName = 'Insight'; tokensToAdd = 15; }
-                    if (productId === 'PRIME') { tierName = 'Prime'; tokensToAdd = 30; }
-
-                    transaction.update(userRef, { 
-                        subscriptionTier: tierName,
-                        tokens: currentTokens + tokensToAdd, // Add monthly allowance immediately
-                        subscriptionStatus: 'active',
-                        subscriptionId: session.subscription
-                    });
-                    console.log(`Upgraded user ${userId} to ${tierName}`);
-                }
+                transaction.update(userRef, { tokens: currentTokens + tokensToAdd });
+                
+                // Log purchase
+                const historyRef = userRef.collection('transaction_history').doc();
+                transaction.set(historyRef, {
+                    action: 'PURCHASE_CREDITS',
+                    amount: tokensToAdd,
+                    productId: productId,
+                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    balanceAfter: currentTokens + tokensToAdd
+                });
             });
 
         } catch (dbError) {

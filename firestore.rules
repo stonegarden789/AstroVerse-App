@@ -1,0 +1,32 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // User Profiles
+    match /users/{userId} {
+      // 1. Authenticated users can read their own profile
+      allow read: if request.auth != null && request.auth.uid == userId;
+      
+      // 2. Users can update basic profile info, BUT NOT TOKENS
+      // Tokens can only be updated by Cloud Functions (Admin SDK bypasses these rules)
+      allow update: if request.auth != null && request.auth.uid == userId
+                    && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['tokens']));
+      
+      // 3. Create only allowed if setting tokens to initial value (or 0)
+      allow create: if request.auth != null && request.auth.uid == userId;
+      
+      // Usage History Subcollection
+      match /usage_history/{historyId} {
+         allow read: if request.auth != null && request.auth.uid == userId;
+         // Write/Delete blocked for user, handled by Cloud Functions
+      }
+      
+      // Transaction History Subcollection
+      match /transaction_history/{transId} {
+         allow read: if request.auth != null && request.auth.uid == userId;
+         // Write/Delete blocked for user
+      }
+    }
+  }
+}

@@ -85,6 +85,7 @@ export interface TokenPackage {
     price: number;
     profitMargin: number;
     label: string;
+    bonus?: string; // e.g. "10% BONUS"
 }
 
 export interface SubscriptionTier {
